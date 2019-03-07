@@ -1,0 +1,4 @@
+This directory contains scripts for simulating genetic rescue and population bottlenecks using SLiM.
+
+The "bottleneck" subdirectory contains scripts for simulationg mean time to extinction following a bottleneck and the "rescue" directory contains scripts that include genetic rescue following the bottleneck.
+
