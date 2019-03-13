@@ -1,5 +1,5 @@
 # Script to make SLIM job script
-# USAGE: ./make_slim_bott_3619.sh [Na] [Nb] [h]
+# USAGE: ./make_slim_bott_31319.sh [Na] [Nb] [nF] [h]
 
 
 # Set Na, the ancestral population size
@@ -8,19 +8,23 @@ Na=${1}
 # Set Nb, the bottleneck population size
 Nb=${2}
 
+# Set nF, the bottleneck population size
+nF=${3}
+
 # Set h, dominance coefficient
-h=${3}
+h=${4}
 
 # Make script
-cat > slim_bottleneck_${Na}Na_${Nb}Nb_h${h}_3619.slim << EOM
+cat > slim_bottleneck_${Na}Na_${Nb}Nb_${nF}nF_h${h}_31319.slim << EOM
 
 initialize() {
 	
 	initializeSLiMModelType("nonWF");
 	defineConstant("K1", ${Na});
 	defineConstant("K3", ${Nb});
+	defineConstant("num_founders", ${nF});
 	defineConstant("phi", 0.9); //parameter for OU model used for stochastic demography
-	defineConstant("sampleSize", 30);
+	defineConstant("sampleSize", 60);
 	defineConstant("g",20000); //number of genes
 	defineConstant("ROHcutoff", 1000000);
 	defineConstant("geneLength", 1500);
@@ -138,7 +142,7 @@ reproduction() {
 // bottleneck to p3
 $((${Na}*10+1)) early(){
 	sim.addSubpop("p3",0);
-	migrants = sample(p1.individuals, K3);
+	migrants = sample(p1.individuals, num_founders);
 	p3.takeMigrants(migrants);
 	cat("gen,K3,p_death,popSizeP3,meanFitness,meanHet,FROH,meanDelMut,avgVStrDel,avgStrDel,avgModDel,avgWkDel," + "\n");
 	sim.tag = K3;
@@ -186,8 +190,12 @@ $((${Na}*10+1)):$((${Na}*10+5000)) early() {
 // track statistics for P3 every generation
 $((${Na}*10+1)):$((${Na}*10+5000)) late() {
 	if (p3.individuals.size() > 1){
-		
-		i=p3.individuals;
+		if(p3.individuals.size() > 60){
+			i = sample(p3.individuals, sampleSize, F);
+		}
+		else{
+			i=p3.individuals;
+		}
 		
 		m = sortBy(i.genomes.mutations, "position"); //get all mutations in sample
 		m_uniq = unique(m); // get rid of redundant muts

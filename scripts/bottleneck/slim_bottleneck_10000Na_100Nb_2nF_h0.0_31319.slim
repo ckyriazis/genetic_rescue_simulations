@@ -1,26 +1,12 @@
-# Script to make SLIM job script
-# USAGE: ./make_slim_bott_3619.sh [Na] [Nb] [h]
-
-
-# Set Na, the ancestral population size
-Na=${1}
-
-# Set Nb, the bottleneck population size
-Nb=${2}
-
-# Set h, dominance coefficient
-h=${3}
-
-# Make script
-cat > slim_bottleneck_${Na}Na_${Nb}Nb_h${h}_3619.slim << EOM
 
 initialize() {
 	
 	initializeSLiMModelType("nonWF");
-	defineConstant("K1", ${Na});
-	defineConstant("K3", ${Nb});
+	defineConstant("K1", 10000);
+	defineConstant("K3", 100);
+	defineConstant("num_founders", 2);
 	defineConstant("phi", 0.9); //parameter for OU model used for stochastic demography
-	defineConstant("sampleSize", 30);
+	defineConstant("sampleSize", 60);
 	defineConstant("g",20000); //number of genes
 	defineConstant("ROHcutoff", 1000000);
 	defineConstant("geneLength", 1500);
@@ -76,12 +62,12 @@ reproduction() {
 	sim.addSubpop("p1", 10);
 
 }
-1:$((${Na}*10)) early() {
+1:100000 early() {
 	p1.fitnessScaling = K1 / p1.individualCount;
 }
 
 //track statistics pre-bottleneck every 500 generations
-1:$((${Na}*10)) late() {
+1:100000 late() {
 	if (sim.generation % 500 == 0) {
 		
 		// Sample scale statistics
@@ -136,9 +122,9 @@ reproduction() {
 
 
 // bottleneck to p3
-$((${Na}*10+1)) early(){
+100001 early(){
 	sim.addSubpop("p3",0);
-	migrants = sample(p1.individuals, K3);
+	migrants = sample(p1.individuals, num_founders);
 	p3.takeMigrants(migrants);
 	cat("gen,K3,p_death,popSizeP3,meanFitness,meanHet,FROH,meanDelMut,avgVStrDel,avgStrDel,avgModDel,avgWkDel," + "\n");
 	sim.tag = K3;
@@ -149,7 +135,7 @@ $((${Na}*10+1)) early(){
 
 // fitness scaling for p3
 
-$((${Na}*10+1)):$((${Na}*10+5000)) early() {
+100001:105000 early() {
 	p1.fitnessScaling = 0;
 	
 	
@@ -184,10 +170,14 @@ $((${Na}*10+1)):$((${Na}*10+5000)) early() {
 
 
 // track statistics for P3 every generation
-$((${Na}*10+1)):$((${Na}*10+5000)) late() {
+100001:105000 late() {
 	if (p3.individuals.size() > 1){
-		
-		i=p3.individuals;
+		if(p3.individuals.size() > 60){
+			i = sample(p3.individuals, sampleSize, F);
+		}
+		else{
+			i=p3.individuals;
+		}
 		
 		m = sortBy(i.genomes.mutations, "position"); //get all mutations in sample
 		m_uniq = unique(m); // get rid of redundant muts
@@ -285,4 +275,3 @@ $((${Na}*10+1)):$((${Na}*10+5000)) late() {
 		cat("The population has gone extinct" + "\n");
 	}
 }
-EOM
