@@ -1,45 +1,21 @@
-# Script to make SLIM job script
-# USAGE: ./make_slim_rescue_4219.sh [Ns] [Ts] [Nb] [nM] [Tr] [h]
-
-
-# Set Ns, the source population size
-Ns=${1}
-
-# Set Ts, the number of generations to run the bottleneck population
-Ts=${2}
-
-# Set Nb, the bottleneck population size
-Nb=${3}
-
-# Set nM, the number of migrants for rescue
-nM=${4}
-
-# Set Tr, the number of generations before rescue
-Tr=${5}
-
-# Set h, dominance coefficient
-h=${6}
-
-# Make script
-cat > slim_rescue_${Ns}Ns_${Ts}Ts_${Nb}Nb_${nM}nM_${Tr}Tr_h${h}_4219.slim << EOM
 
 initialize() {
 	
 	initializeSLiMModelType("nonWF");
-	defineConstant("K1", 10000); // size of ancestral population
-	defineConstant("K2", ${Ns}); // size of source populatuon
-	defineConstant("K3", ${Nb}); // size of bottleneck population
-	defineConstant("numFounders", ${Nb}); // number of founders of bottleneck population (p3) - setting to size of bottleneck pop for now
-	defineConstant("numMigrants", ${nM}); //number of migrants for rescue
-	defineConstant("sampleSize", 30); // number of individuals to sample from bottleneck population for calculating summary statistics
-	defineConstant("g",20000); //number of genes 
-	defineConstant("ROHcutoff", 1000000); 
+	defineConstant("K1", 15000);
+	defineConstant("K3", 100);
+	defineConstant("num_founders", 100);
+	defineConstant("sampleSize", 30);
+	defineConstant("g",20000); //number of genes
+	defineConstant("ROHcutoff", 1000000);
 	defineConstant("geneLength", 1500);
 	defineConstant("seqLength", g*geneLength);
+	//cat("Genome length:"+seqLength+"\n");	
 	
 	initializeMutationRate(1e-8);
-	initializeMutationType("m1", 0.0, "g",-0.01314833, 0.186); // deleterious mutations drawn from Kim et al 2017 DFE
-	initializeMutationType("m2", 0.5, "f", ${h});
+	initializeMutationType("m1", 0.0, "g",-0.01314833, 0.186);
+	initializeMutationType("m2", 0.5, "f", 0.0);
+	
 	initializeGenomicElementType("g1", c(m1,m2), c(2.31,1.0));
 	
 	
@@ -47,23 +23,23 @@ initialize() {
 	
 	// vector of # genes on 38 different dog chromosomes (scaled by Jacqueline to 1000 total genes) - need to rescale according to number of desired genes
 	gene_nums=c(56,39,42,40,40,35,37,34,28,31,34,33,29,28,29,27,29,25,24,26,23,28,24,21,23,18,21,19,19,18,18,18,14,19,12,14,14,11);
-	gene_nums = gene_nums*g/1000; 
+	gene_nums = gene_nums*g/1000; //need to scale to number of desired genes since above array was originally set up for 1000 genes
 	
-	// initialize genes
+	
 	for (i in 1:g){
 		initializeGenomicElement(g1, ((i-1)*geneLength)+(i-1), (i*geneLength)+(i-2) );
 	}
 		
-		
-	// set recombination rates between chromosomes as 0.5 and between genes as 1e-3	
+	
 	rates=NULL;
 	
+	// Multiple chromosomes:
 	for (i in 1:(size(gene_nums)-1)){
 		rates=c(rates, 0, rep(c(1e-3, 0), asInteger(gene_nums[i-1]-1)), 0.5);
 	}
 	rates=c(rates, 0, rep(c(1e-3, 0), asInteger(gene_nums[size(gene_nums)-1]-1)));
+	
 	ends=NULL;
-
 	for (i in 1:g){
 		ends=c(ends, (i*geneLength)+(i-2), (i*geneLength)+(i-1));
 	}
@@ -124,7 +100,7 @@ function (s) getStats(o pop, i sampSize)
 		ID_het = (genotype == 1); //outputs T/F for genotypes if they are het or homDer
 		ID_homDer = (genotype == 2);
 		pos_het = indm_uniq.position[ID_het]; //outputs positions of heterozgoys genotypes
-		
+			
 		startpos = c(0, pos_het); //adds 0 to beggining of vector of hets
 		endpos = c(pos_het, sim.chromosome.lastPosition); //adds last position in genome to vector of hets
 		pos_het_diff = endpos - startpos;
@@ -161,79 +137,48 @@ function (s) getStats(o pop, i sampSize)
 	return(pop.individuals.size() + "," + mean(fitness_population) + "," + mean(ind_het) + "," + mean(ROH_length_sumPerInd)/seqLength + "," + mean(Num_VstrDel_muts) + "," + mean(Num_strDel_muts)+ "," + mean(Num_modDel_muts) + "," + mean(Num_wkDel_muts));
 }
 
+
+
 reproduction() {
 	subpop.addCrossed(individual, subpop.sampleIndividuals(1));
 }
 
 
 
-// initialize ancestral population p1 and start burn in
 1 early() {
 	cat("gen,popSize,meanFitness,meanHet,FROH,avgVstrDel,avgStrDel,avgModDel,avgWkDel" + "\n");
 	sim.addSubpop("p1", 10);
 }
 
-1:100000 early() {
+1:150000 early() {
 	p1.fitnessScaling = K1 / p1.individualCount;
 }
 
-//track statistics ancestral pop every 1000 generations
-1:100000 late() {
-	if (sim.generation % 1000 == 0) {
-		stats = getStats(p1, sampleSize);
-		cat(sim.generation + "," + stats + "\n");
+//track statistics pre-bottleneck every 1000 generations
+1:150000 late() {
+		if (sim.generation % 1000 == 0) {
+			stats = getStats(p1, sampleSize);
+			cat(sim.generation + "," + stats + "\n");
 		}
 }
 
 
-
-// split off source population p2
-
-100001 early(){
-	sim.addSubpop("p2",0);
-	migrants = sample(p1.individuals, 1000);
-	p2.takeMigrants(migrants);
-	cat("gen,popSizeP2,meanFitnessP2,meanHetP2,FROHP2,avgVStrDelP2,avgStrDelP2,avgModDelP2,avgWkDelP2," + "\n");
-}
-
-
-//fitness scaling for p1 and p2
-
-100001:$((100000+${Ts})) early() {
-	p1.fitnessScaling = K1 / p1.individualCount;
-	p2.fitnessScaling = K2 / p2.individualCount;
-}
-
-
-// track stats of p2 every 50 generations after split and before bottleneck
-100001:$((100000+${Ts})) late() {
-	if (sim.generation % 50 == 0) {
-		stats = getStats(p2, sampleSize);
-		cat(sim.generation + "," + stats + "\n");
-		}
-}
-            
-
-
-// split off bottleneck population p3
-
-$((100001+${Ts})) early(){
+// bottleneck to p3
+150001 early(){
 	sim.addSubpop("p3",0);
-	migrants = sample(p1.individuals, numFounders);
+	migrants = sample(p1.individuals, num_founders);
 	p3.takeMigrants(migrants);
-	//cat("gen,K3,p_death,popSizeP2,meanFitnessP2,meanHetP2,FROHP2,avgVStrDelP2,avgStrDelP2,avgModDelP2,avgWkDelP2,popSizeP3,meanFitnessP3,meanHetP3,FROHP3,avgVStrDelP3,avgStrDelP3,avgModDelP3,avgWkDelP3," + "\n");	      
-	cat("gen,K3,p_death,popSizeP3,meanFitnessP3,meanHetP3,FROHP3,avgVStrDelP3,avgStrDelP3,avgModDelP3,avgWkDelP3," + "\n");
-
+	cat("gen,K3,p_death,popSizeP3,meanFitness,meanHet,FROH,meanDelMut,avgVStrDel,avgStrDel,avgModDel,avgWkDel," + "\n");
+	
 	sim.tag = K3; // use sim.tag to keep track of K3 from one generation to the next
 }
 
 
-// fitness scaling for p2 and p3 from founding of bottleneck until end (5000 generations after bottleneck or extinction)
 
-$((100001+${Ts})):$((100001+${Ts}+5000)) early() {
-	p1.fitnessScaling = 0;	// terminate p1
-	p2.fitnessScaling = K2 / p2.individualCount;
+// fitness scaling for p3
 
+150001:155000 early() {
+	p1.fitnessScaling = 0; // kill off p1
 	
 	// kill off individuals at random - not sure if I should then adjust the individualCount
 	inds = p3.individuals;
@@ -254,27 +199,18 @@ $((100001+${Ts})):$((100001+${Ts}+5000)) early() {
 		}
 	}
 	
-	// set K3 for this generation according to stochastic OU model where K3 depends both on K3 from previous generation, the mean K3, and noise
+	//OU model with phi=0.9
 	sim.tag = asInteger(exp((1-0.9)*log(K3)+0.9*log(sim.tag)+rnorm(n = 1, mean = 0, sd = log10(1.3))));
 	p3.fitnessScaling = sim.tag / p3.individualCount;
+	
 	cat(sim.generation + "," + sim.tag + "," + beta + ",");
 
 }
 
 
 
-// send migrant(s) to p3
-$((100000+${Ts}+${Tr})) early(){
-	migrants = sample(p2.individuals, numMigrants);
-	p3.takeMigrants(migrants);
-}
-
-
-// track statistics for p2 and p3 every generation after bottleneck
-$((100001+${Ts})):$((100001+${Ts}+5000)) late() {
-		
-	//stats_P2 = getStats(p2, sampleSize);
-	
+// track statistics for P3 every generation and terminate when the population goes to 1 individual or after 5000 generations
+150001:155000 late() {
 	if(p3.individuals.size() < 2){
 		stats_P3 = c("NA,NA,NA,NA,NA,NA,NA"); //cant get stats from just one individual
 	}
@@ -285,15 +221,10 @@ $((100001+${Ts})):$((100001+${Ts}+5000)) late() {
 		stats_P3 = getStats(p3, sampleSize);
 	}
 		
-	//cat(stats_P2 + "," + stats_P3 + "\n");
 	cat(stats_P3 + "\n");	
-
 
 	if(p3.individuals.size() < 2){
 			sim.simulationFinished();
 			cat("The population has gone extinct");
 	}
 }
-
-EOM
-
