@@ -15,7 +15,7 @@ nF=${3}
 h=${4}
 
 # Make script
-cat > slim_bottleneck_${Na}Na_${Nb}Nb_${nF}nF_h${h}_4319.slim << EOM
+cat > slim_bottleneck_${Na}Na_${Nb}Nb_${nF}nF_h${h}_51619.slim << EOM
 
 initialize() {
 	
@@ -143,6 +143,9 @@ function (s) getStats(o pop, i sampSize)
 				} else if ((m1.dominanceCoeff == 0.0) & (size(uu) == 1)) {
 					fitness = 1;
 				}
+				else if (m1.dominanceCoeff == 0.5) {
+					fitness =  product(1 + uu.selectionCoeff * m1.dominanceCoeff);
+				}
 				fitness_individual = c(fitness_individual, fitness);
 			}
 			fitness_individual = product(fitness_individual);
@@ -195,7 +198,7 @@ $((${Na}*10+1)) early(){
 
 // fitness scaling for p3
 
-$((${Na}*10+1)):$((${Na}*10+5000)) early() {
+$((${Na}*10+1)):$((${Na}*10+10000)) early() {
 	p1.fitnessScaling = 0; // kill off p1
 	
 	// kill off individuals at random - not sure if I should then adjust the individualCount
@@ -228,7 +231,7 @@ $((${Na}*10+1)):$((${Na}*10+5000)) early() {
 
 
 // track statistics for P3 every generation and terminate when the population goes to 1 individual or after 5000 generations
-$((${Na}*10+1)):$((${Na}*10+5000)) late() {
+$((${Na}*10+1)):$((${Na}*10+10000)) late() {
 	if(p3.individuals.size() < 2){
 		stats_P3 = c("NA,NA,NA,NA,NA,NA,NA,NA"); //cant get stats from just one individual
 	}

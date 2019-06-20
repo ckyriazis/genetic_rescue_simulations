@@ -1,5 +1,5 @@
 # Script to make SLIM job script
-# USAGE: ./make_slim_bott_4319.sh [Na] [Nb] [nF] [h]
+# USAGE: ./make_slim_bottleneck_no_neutral_4919.sh [Na] [Nb] [nF] [h]
 
 
 # Set Na, the ancestral population size
@@ -15,7 +15,7 @@ nF=${3}
 h=${4}
 
 # Make script
-cat > slim_bottleneck_${Na}Na_${Nb}Nb_${nF}nF_h${h}_4319.slim << EOM
+cat > slim_bottleneck_${Na}Na_${Nb}Nb_${nF}nF_h${h}_no_neut_4919.slim << EOM
 
 initialize() {
 	
@@ -25,17 +25,14 @@ initialize() {
 	defineConstant("num_founders", ${nF});
 	defineConstant("sampleSize", 30);
 	defineConstant("g",20000); //number of genes
-	defineConstant("ROHcutoff", 1000000);
 	defineConstant("geneLength", 1500);
 	defineConstant("seqLength", g*geneLength);
 	//cat("Genome length:"+seqLength+"\n");	
 	
-	initializeMutationRate(1e-8);
+	defineConstant("muScale", 2.31/(2.31+1)); // for scaling mutation rate in the absence of neutral muts
+	initializeMutationRate(1e-8*muScale);
 	initializeMutationType("m1", ${h}, "g",-0.01314833, 0.186);
-	initializeMutationType("m2", 0.5, "f", 0.0);
-	
-	initializeGenomicElementType("g1", c(m1,m2), c(2.31,1.0));
-	
+	initializeGenomicElementType("g1", m1, 1);
 	
 	// approach for setting up genes on different chromosomes adopted from Jacqueline's wolf scripts 
 	
@@ -76,28 +73,15 @@ function (s) getStats(o pop, i sampSize)
 {
 	i = sample(pop.individuals, sampSize, F);
 	
-	m = sortBy(i.genomes.mutations, "position"); //get all mutations in sample
-	m_uniq = unique(m); // get rid of redundant muts
-	DAF = sapply(m_uniq, "sum(m == applyValue);"); // count number of each mut in pop
-	m_uniq_polym = m_uniq[DAF != i.genomes.size()]; //remove fixed mutations??
-	
 	//initialize vectors
-	ROH_length_sumPerInd = c();
 	Num_VstrDel_muts = c();
 	Num_strDel_muts = c();
 	Num_modDel_muts = c();
 	Num_wkDel_muts = c();
-	ind_het = c();
 	fitness_population = c();
 	
 	for (individual in i) {
-		
-		indm = sortBy(individual.genomes.mutations, "position");
-		indm = indm[match(indm, m_uniq_polym) >= 0];   // Check that individual mutations are not fixed 
-		indm_uniq = unique(indm);
-		
-		genotype = sapply(indm_uniq, "sum(indm == applyValue);");
-		
+	
 		// tally number of mutations for different classes of selection coefficient per individual
 		s = individual.genomes.mutations.selectionCoeff;
 		
@@ -105,28 +89,6 @@ function (s) getStats(o pop, i sampSize)
 		Num_strDel_muts = c(Num_strDel_muts, sum(s<=-0.01));
 		Num_modDel_muts = c(Num_modDel_muts, sum(s<=-0.001 & s > -0.01));
 		Num_wkDel_muts = c(Num_wkDel_muts, sum(s<=-0.00001 & s > -0.001));
-		
-		if (isNULL(genotype)) {
-			ind_het = c(ind_het, 0); //putting this here to avoid error when trying to sum null vector
-			next;
-		}
-		
-		ind_het = c(ind_het, sum(genotype==1)/(seqLength));
-		
-		//code for getting ROHs
-		
-		ID_het = (genotype == 1); //outputs T/F for genotypes if they are het or homDer
-		ID_homDer = (genotype == 2);
-		pos_het = indm_uniq.position[ID_het]; //outputs positions of heterozgoys genotypes
-			
-		startpos = c(0, pos_het); //adds 0 to beggining of vector of hets
-		endpos = c(pos_het, sim.chromosome.lastPosition); //adds last position in genome to vector of hets
-		pos_het_diff = endpos - startpos;
-		ROH_startpos = startpos[pos_het_diff > ROHcutoff]; //filter out startpos that dont correspond to ROH > 1Mb
-		ROH_endpos = endpos[pos_het_diff > ROHcutoff];
-		ROH_length = pos_het_diff[pos_het_diff > ROHcutoff]; //vector of ROHs for each individual	
-		ROH_length_sum = sum(ROH_length);
-		ROH_length_sumPerInd = c(ROH_length_sumPerInd, ROH_length_sum); // add sum of ROHs for each individual to vector of ROHs for all individuals
 		
 		// calculate individual fitness - code from Bernard	
 		allmuts = c(individual.genomes[0].mutationsOfType(m1), individual.genomes[1].mutationsOfType(m1));
@@ -152,7 +114,7 @@ function (s) getStats(o pop, i sampSize)
 		}
 	}
 	
-	return(pop.individuals.size() + "," + mean(fitness_population) + "," + mean(ind_het) + "," + mean(ROH_length_sumPerInd)/seqLength + "," + mean(Num_VstrDel_muts) + "," + mean(Num_strDel_muts)+ "," + mean(Num_modDel_muts) + "," + mean(Num_wkDel_muts));
+	return(pop.individuals.size() + "," + mean(fitness_population) + "," + mean(Num_VstrDel_muts) + "," + mean(Num_strDel_muts)+ "," + mean(Num_modDel_muts) + "," + mean(Num_wkDel_muts));
 }
 
 
@@ -164,7 +126,7 @@ reproduction() {
 
 
 1 early() {
-	cat("gen,popSize,meanFitness,meanHet,FROH,avgVstrDel,avgStrDel,avgModDel,avgWkDel" + "\n");
+	cat("gen,popSize,meanFitness,avgVstrDel,avgStrDel,avgModDel,avgWkDel" + "\n");
 	sim.addSubpop("p1", 10);
 }
 
@@ -186,7 +148,7 @@ $((${Na}*10+1)) early(){
 	sim.addSubpop("p3",0);
 	migrants = sample(p1.individuals, num_founders);
 	p3.takeMigrants(migrants);
-	cat("gen,K3,p_death,popSizeP3,meanFitness,meanHet,FROH,avgVStrDel,avgStrDel,avgModDel,avgWkDel" + "\n");
+	cat("gen,K3,p_death,popSizeP3,meanFitness,avgVStrDel,avgStrDel,avgModDel,avgWkDel," + "\n");
 	
 	sim.tag = K3; // use sim.tag to keep track of K3 from one generation to the next
 }
@@ -230,7 +192,7 @@ $((${Na}*10+1)):$((${Na}*10+5000)) early() {
 // track statistics for P3 every generation and terminate when the population goes to 1 individual or after 5000 generations
 $((${Na}*10+1)):$((${Na}*10+5000)) late() {
 	if(p3.individuals.size() < 2){
-		stats_P3 = c("NA,NA,NA,NA,NA,NA,NA,NA"); //cant get stats from just one individual
+		stats_P3 = c("NA,NA,NA,NA,NA,NA"); //cant get stats from just one individual
 	}
 	if(p3.individuals.size() < sampleSize & p3.individuals.size() > 1){	// case when p3 size is less than sample size but greater than 1
 		stats_P3 = getStats(p3, p3.individuals.size());

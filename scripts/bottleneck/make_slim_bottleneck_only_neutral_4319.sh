@@ -15,7 +15,7 @@ nF=${3}
 h=${4}
 
 # Make script
-cat > slim_bottleneck_${Na}Na_${Nb}Nb_${nF}nF_h${h}_4319.slim << EOM
+cat > slim_bottleneck_${Na}Na_${Nb}Nb_${nF}nF_h${h}_only_neutral_4319.slim << EOM
 
 initialize() {
 	
@@ -31,7 +31,7 @@ initialize() {
 	//cat("Genome length:"+seqLength+"\n");	
 	
 	initializeMutationRate(1e-8);
-	initializeMutationType("m1", ${h}, "g",-0.01314833, 0.186);
+	initializeMutationType("m1", ${h},"f", 0.0);
 	initializeMutationType("m2", 0.5, "f", 0.0);
 	
 	initializeGenomicElementType("g1", c(m1,m2), c(2.31,1.0));
@@ -195,7 +195,7 @@ $((${Na}*10+1)) early(){
 
 // fitness scaling for p3
 
-$((${Na}*10+1)):$((${Na}*10+5000)) early() {
+$((${Na}*10+1)):$((${Na}*10+50)) early() {
 	p1.fitnessScaling = 0; // kill off p1
 	
 	// kill off individuals at random - not sure if I should then adjust the individualCount
@@ -228,7 +228,7 @@ $((${Na}*10+1)):$((${Na}*10+5000)) early() {
 
 
 // track statistics for P3 every generation and terminate when the population goes to 1 individual or after 5000 generations
-$((${Na}*10+1)):$((${Na}*10+5000)) late() {
+$((${Na}*10+1)):$((${Na}*10+50)) late() {
 	if(p3.individuals.size() < 2){
 		stats_P3 = c("NA,NA,NA,NA,NA,NA,NA,NA"); //cant get stats from just one individual
 	}
