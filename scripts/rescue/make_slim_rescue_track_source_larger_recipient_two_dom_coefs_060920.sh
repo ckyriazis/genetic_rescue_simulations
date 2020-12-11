@@ -1,5 +1,5 @@
 # Script to make SLIM job script
-# USAGE: ./make_slim_rescue_42919.sh [Ns] [Ts] [Nb] [nM] [nR] [h]
+# USAGE: ./make_slim_rescue_42919.sh [Ns] [Ts] [Nb] [nM] [nR] 
 
 
 # Set Ns, the source population size
@@ -17,11 +17,9 @@ nM=${4}
 # Set nR, the number of times to genetic rescue when N<=5
 nR=${5}
 
-# Set h, dominance coefficient
-h=${6}
 
 # Make script
-cat > slim_rescue_larger_recipient_${Ns}Ns_${Ts}Ts_${Nb}Nb_${nM}nM_${nR}nR_h${h}_112619.slim << EOM
+cat > slim_rescue_larger_recipient_${Ns}Ns_${Ts}Ts_${Nb}Nb_${nM}nM_${nR}nR_two_dom_coefs_060920.slim << EOM
 
 initialize() {
 	
@@ -38,11 +36,17 @@ initialize() {
 	defineConstant("geneLength", 1500);
 	defineConstant("seqLength", g*geneLength);
 	
-	initializeMutationRate(1e-8);
-	initializeMutationType("m1", ${h}, "g",-0.01314833, 0.186); // deleterious mutations drawn from Kim et al 2017 DFE
-	initializeMutationType("m2", 0.5, "f", 0.0);
-	initializeGenomicElementType("g1", c(m1,m2), c(2.31,1.0));
-	
+        // half of all deleterious mutations (m1 or m2) become neutral here
+        // so need to increase mutation rate by (2.31/3.31)/0.5=1.396 
+        // to recover original volume of deleterious mutations 
+        // this approach leads to more neutral mutations than the original model
+        // so we dont draw those separately
+        initializeMutationRate(1.396e-8);
+        defineConstant("h_strDel", 0);
+        defineConstant("h_wkModDel", 0.25);
+        initializeMutationType("m1", h_strDel, "s", "x=rgamma(1,-0.01314833,0.186); if(x<-0.01){;return(x);}else{;return(0);}");
+        initializeMutationType("m2", h_wkModDel, "s", "x=rgamma(1,-0.01314833,0.186); if(x>=-0.01){;return(x);}else{;return(0);}");
+        initializeGenomicElementType("g1", c(m1,m2), c(1,1));	
 	
 	// approach for setting up genes on different chromosomes adopted from Jacqueline's wolf scripts 
 	
@@ -144,25 +148,31 @@ function (s) getStats(o pop, i sampSize)
 		// calculate individual fitness - code from Bernard	
 		allmuts = c(individual.genomes[0].mutationsOfType(m1), individual.genomes[1].mutationsOfType(m1));
 		uniquemuts = individual.uniqueMutationsOfType(m1);
-		
-		fitness_individual = c();
-		
-		if (size(uniquemuts) > 0){
-			for (u in uniquemuts){
-				places = (allmuts.id == u.id);
-				uu = allmuts[places];
-				if ((m1.dominanceCoeff == 0.0) & (size(uu) == 2)) {
-					fitness = 1 + sum(uu.selectionCoeff)/2;
-				} else if ((m1.dominanceCoeff == 0.0) & (size(uu) == 1)) {
-					fitness = 1;
-				}
-				fitness_individual = c(fitness_individual, fitness);
-			}
-			fitness_individual = product(fitness_individual);
-			fitness_population = c(fitness_population, fitness_individual);
-		} else {
-			fitness_population = c(fitness_population, 1);
+
+                fitness_individual = c();
+                
+                if (size(uniquemuts) > 0){
+                        for (u in uniquemuts){
+                                places = (allmuts.id == u.id);
+                                uu = allmuts[places];
+                                if (size(uu) == 2) {
+                                        fitness = 1 + sum(uu.selectionCoeff)/2;
+                                } else if (size(uu) == 1) {
+                                        if (u.mutationType == m1){
+                                                fitness = 1 + uu.selectionCoeff * h_strDel;
+                                        }
+                                        if (u.mutationType == m2){
+                                                fitness = 1 + uu.selectionCoeff * h_wkModDel;
+                                        }
+                                }
+                                fitness_individual = c(fitness_individual, fitness);
+                        }
+                        fitness_individual = product(fitness_individual);
+                        fitness_population = c(fitness_population, fitness_individual);
+                } else {
+                        fitness_population = c(fitness_population, 1);
 		}
+
 	}
 	
 	return(pop.individuals.size() + "," + mean(fitness_population) + "," + mean(ind_het) + "," + mean(ROH_length_sumPerInd)/seqLength + "," + mean(Num_VstrDel_muts) + "," + mean(Num_strDel_muts)+ "," + mean(Num_modDel_muts) + "," + mean(Num_wkDel_muts));

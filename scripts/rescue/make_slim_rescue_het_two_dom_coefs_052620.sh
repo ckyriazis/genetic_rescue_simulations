@@ -1,5 +1,5 @@
 # Script to make SLIM job script
-# USAGE: ./make_slim_rescue_4219.sh [Ns] [Ts] [Nb] [nM] [Tr] [h]
+# USAGE: ./make_slim_rescue_5319.sh [Ns] [Ts] [Nb] [nM] [nR]
 
 
 # Set Ns, the source population size
@@ -14,14 +14,12 @@ Nb=${3}
 # Set nM, the number of migrants for rescue
 nM=${4}
 
-# Set Tr, the number of generations before rescue
-Tr=${5}
+# Set nR, the number of times to genetic rescue when N<=5
+nR=${5}
 
-# Set h, dominance coefficient
-h=${6}
 
 # Make script
-cat > slim_rescue_${Ns}Ns_${Ts}Ts_${Nb}Nb_${nM}nM_${Tr}Tr_h${h}_4219.slim << EOM
+cat > slim_rescue_${Ns}Ns_${Ts}Ts_${Nb}Nb_${nM}nM_${nR}nR_het_two_dom_coefs_052620.slim << EOM
 
 initialize() {
 	
@@ -32,16 +30,23 @@ initialize() {
 	defineConstant("numFounders", ${Nb}); // number of founders of bottleneck population (p3) - setting to size of bottleneck pop for now
 	defineConstant("numMigrants", ${nM}); //number of migrants for rescue
 	defineConstant("sampleSize", 30); // number of individuals to sample from bottleneck population for calculating summary statistics
+	defineConstant("numRescue", ${nR});
 	defineConstant("g",20000); //number of genes 
 	defineConstant("ROHcutoff", 1000000); 
 	defineConstant("geneLength", 1500);
 	defineConstant("seqLength", g*geneLength);
 	
-	initializeMutationRate(1e-8);
-	initializeMutationType("m1", 0.0, "g",-0.01314833, 0.186); // deleterious mutations drawn from Kim et al 2017 DFE
-	initializeMutationType("m2", 0.5, "f", ${h});
-	initializeGenomicElementType("g1", c(m1,m2), c(2.31,1.0));
-	
+        // half of all deleterious mutations (m1 or m2) become neutral here
+        // so need to increase mutation rate by (2.31/3.31)/0.5=1.396 
+        // to recover original volume of deleterious mutations 
+        // this approach leads to more neutral mutations than the original model
+        // so we dont draw those separately
+        initializeMutationRate(1.396e-8);
+        defineConstant("h_strDel", 0);
+        defineConstant("h_wkModDel", 0.25);
+        initializeMutationType("m1", h_strDel, "s", "x=rgamma(1,-0.01314833,0.186); if(x<-0.01){;return(x);}else{;return(0);}");
+        initializeMutationType("m2", h_wkModDel, "s", "x=rgamma(1,-0.01314833,0.186); if(x>=-0.01){;return(x);}else{;return(0);}");
+        initializeGenomicElementType("g1", c(m1,m2), c(1,1));	
 	
 	// approach for setting up genes on different chromosomes adopted from Jacqueline's wolf scripts 
 	
@@ -80,7 +85,13 @@ initialize() {
 
 function (s) getStats(o pop, i sampSize)
 {
-	i = sample(pop.individuals, sampSize, F);
+
+	if(pop.individuals.size() < sampSize){
+		i = pop.individuals;
+	}
+	else{
+		i = sample(pop.individuals, sampSize, F);
+	}
 	
 	m = sortBy(i.genomes.mutations, "position"); //get all mutations in sample
 	m_uniq = unique(m); // get rid of redundant muts
@@ -137,25 +148,31 @@ function (s) getStats(o pop, i sampSize)
 		// calculate individual fitness - code from Bernard	
 		allmuts = c(individual.genomes[0].mutationsOfType(m1), individual.genomes[1].mutationsOfType(m1));
 		uniquemuts = individual.uniqueMutationsOfType(m1);
-		
-		fitness_individual = c();
-		
-		if (size(uniquemuts) > 0){
-			for (u in uniquemuts){
-				places = (allmuts.id == u.id);
-				uu = allmuts[places];
-				if ((m1.dominanceCoeff == 0.0) & (size(uu) == 2)) {
-					fitness = 1 + sum(uu.selectionCoeff)/2;
-				} else if ((m1.dominanceCoeff == 0.0) & (size(uu) == 1)) {
-					fitness = 1;
-				}
-				fitness_individual = c(fitness_individual, fitness);
-			}
-			fitness_individual = product(fitness_individual);
-			fitness_population = c(fitness_population, fitness_individual);
-		} else {
-			fitness_population = c(fitness_population, 1);
-		}
+	
+                fitness_individual = c();
+                
+                if (size(uniquemuts) > 0){
+                        for (u in uniquemuts){
+                                places = (allmuts.id == u.id);
+                                uu = allmuts[places];
+                                if (size(uu) == 2) {
+                                        fitness = 1 + sum(uu.selectionCoeff)/2;
+                                } else if (size(uu) == 1) {
+                                        if (u.mutationType == m1){
+                                                fitness = 1 + uu.selectionCoeff * h_strDel;
+                                        }
+                                        if (u.mutationType == m2){
+                                                fitness = 1 + uu.selectionCoeff * h_wkModDel;
+                                        }
+                                }
+                                fitness_individual = c(fitness_individual, fitness);
+                        }
+                        fitness_individual = product(fitness_individual);
+                        fitness_population = c(fitness_population, fitness_individual);
+                } else {
+                        fitness_population = c(fitness_population, 1);
+                }
+	
 	}
 	
 	return(pop.individuals.size() + "," + mean(fitness_population) + "," + mean(ind_het) + "," + mean(ROH_length_sumPerInd)/seqLength + "," + mean(Num_VstrDel_muts) + "," + mean(Num_strDel_muts)+ "," + mean(Num_modDel_muts) + "," + mean(Num_wkDel_muts));
@@ -191,7 +208,7 @@ reproduction() {
 
 100001 early(){
 	sim.addSubpop("p2",0);
-	migrants = sample(p1.individuals, 1000);
+	migrants = sample(p1.individuals, K2);
 	p2.takeMigrants(migrants);
 	cat("gen,popSizeP2,meanFitnessP2,meanHetP2,FROHP2,avgVStrDelP2,avgStrDelP2,avgModDelP2,avgWkDelP2," + "\n");
 }
@@ -221,10 +238,13 @@ $((100001+${Ts})) early(){
 	sim.addSubpop("p3",0);
 	migrants = sample(p1.individuals, numFounders);
 	p3.takeMigrants(migrants);
-	//cat("gen,K3,p_death,popSizeP2,meanFitnessP2,meanHetP2,FROHP2,avgVStrDelP2,avgStrDelP2,avgModDelP2,avgWkDelP2,popSizeP3,meanFitnessP3,meanHetP3,FROHP3,avgVStrDelP3,avgStrDelP3,avgModDelP3,avgWkDelP3," + "\n");	      
-	cat("gen,K3,p_death,popSizeP3,meanFitnessP3,meanHetP3,FROHP3,avgVStrDelP3,avgStrDelP3,avgModDelP3,avgWkDelP3," + "\n");
+	cat("gen,K3,p_death,popSizeP2,meanFitnessP2,meanHetP2,FROHP2,avgVStrDelP2,avgStrDelP2,avgModDelP2,avgWkDelP2,popSizeP3,meanFitnessP3,meanHetP3,FROHP3,avgVStrDelP3,avgStrDelP3,avgModDelP3,avgWkDelP3" + "\n");	      
+
+	//cat("gen,K3,p_death,popSizeP3,meanFitnessP3,meanHetP3,FROHP3,avgVStrDelP3,avgStrDelP3,avgModDelP3,avgWkDelP3" + "\n");
+
 
 	sim.tag = K3; // use sim.tag to keep track of K3 from one generation to the next
+	sim.setValue("rescueCount", 0);
 }
 
 
@@ -263,37 +283,80 @@ $((100001+${Ts})):$((100001+${Ts}+5000)) early() {
 
 
 
-// send migrant(s) to p3
-$((100000+${Ts}+${Tr})) early(){
-	migrants = sample(p2.individuals, numMigrants);
-	p3.takeMigrants(migrants);
-}
 
 
 // track statistics for p2 and p3 every generation after bottleneck
 $((100001+${Ts})):$((100001+${Ts}+5000)) late() {
-		
-	//stats_P2 = getStats(p2, sampleSize);
-	
 	if(p3.individuals.size() < 2){
-		stats_P3 = c("NA,NA,NA,NA,NA,NA,NA"); //cant get stats from just one individual
+		stats_P3 = c("NA,NA,NA,NA,NA,NA,NA,NA"); //cant get stats from just one individual
 	}
-	if(p3.individuals.size() < sampleSize & p3.individuals.size() > 1){	// case when p3 size is less than sample size but greater than 1
-		stats_P3 = getStats(p3, p3.individuals.size());
+	if(p2.individuals.size() < 2){
+		stats_P2 = c("NA,NA,NA,NA,NA,NA,NA,NA"); //cant get stats from just one individual
 	}
-	if(p3.individuals.size() >= sampleSize){ //case when p3 size is greater than or equal to sample size
+	
+	if(p3.individuals.size() > 1){
 		stats_P3 = getStats(p3, sampleSize);
 	}
-		
-	//cat(stats_P2 + "," + stats_P3 + "\n");
-	cat(stats_P3 + "\n");	
+	
+	if(p2.individuals.size() > 1){
+		stats_P2 = getStats(p2, sampleSize);
+	}
 
+	cat(stats_P2 + "," + stats_P3 + "\n");
+	//cat(stats_P3 + "\n");	
+	
+}
+
+
+// send migrant(s) to p3
+$((100001+${Ts})):$((100001+${Ts}+5000)) late() {      
+        if(p3.individualCount <=5 & sim.getValue("rescueCount") < numRescue){
+
+                
+                // here I am looping over all individuals in the source population, identifying those with the lowest number of (very) strongly deleterious variants,and selecting those for rescue
+                // options to potentially include are how many individuals to sample the population for and whether to look at variants <= -0.05 or <= -0.01
+		
+                i = sample(p2.individuals, 100, F); // subsampling important for het which is VERY slow but not for deleterious variants
+
+       		m = sortBy(i.genomes.mutations, "position"); //get all mutations in sample
+ 		m_uniq = unique(m); // get rid of redundant muts
+	        DAF = sapply(m_uniq, "sum(m == applyValue);"); // count number of each mut in pop
+	        m_uniq_polym = m_uniq[DAF != i.genomes.size()]; //remove fixed mutations??
+        
+        
+        	for (individual in i) {
+                
+                	indm = sortBy(individual.genomes.mutations, "position");
+          	        indm = indm[match(indm, m_uniq_polym) >= 0];   // Check that individual mutations are not fixed 
+                	indm_uniq = unique(indm);
+        	        genotype = sapply(indm_uniq, "sum(indm == applyValue);");
+               		individual.tagF = sum(genotype==1)/(seqLength); // set individual.tag as heterozygosity
+
+                }
+                
+                //sort the individuals by their number of deleterious variants and then take those with the fewest as migrants
+                inds_het = sortBy(i, "tagF", ascending = F); // be careful of order of sort - note that default is ascending
+                migrants = inds_het[0:(numMigrants-1)];
+
+                p3.takeMigrants(migrants);
+                sim.setValue("rescueCount", sim.getValue("rescueCount")+1);
+                sim.setValue("rescueGen", sim.generation);
+        }
+}
+
+
+
+// terminate simulation if pop size < 2
+$((100001+${Ts})):$((100001+${Ts}+5000)) late() {
 
 	if(p3.individuals.size() < 2){
-			sim.simulationFinished();
-			cat("The population has gone extinct");
-	}
+                sim.simulationFinished();
+                cat("The population has gone extinct, rescue at generation: " + sim.getValue("rescueGen"));
+        }               
+
 }
+
+
 
 EOM
 
