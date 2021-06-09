@@ -146,8 +146,8 @@ function (s) getStats(o pop, i sampSize)
 		ROH_length_sumPerInd = c(ROH_length_sumPerInd, ROH_length_sum); // add sum of ROHs for each individual to vector of ROHs for all individuals
 		
 		// calculate individual fitness - code from Bernard	
-		allmuts = c(individual.genomes[0].mutationsOfType(m1), individual.genomes[1].mutationsOfType(m1));
-		uniquemuts = individual.uniqueMutationsOfType(m1);
+		allmuts = c(individual.genomes[0].mutationsOfType(m1), individual.genomes[1].mutationsOfType(m1),individual.genomes[0].mutationsOfType(m2), individual.genomes[1].mutationsOfType(m2));
+ 		uniquemuts = c(individual.uniqueMutationsOfType(m1),individual.uniqueMutationsOfType(m2));
 	
                 fitness_individual = c();
                 
